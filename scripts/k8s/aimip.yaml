@@ -110,7 +110,7 @@ spec:
               fi
               pip install --no-cache-dir cartopy boto3 xbatcher "dask[distributed]" gcsfs seaborn
               pip install --no-cache-dir -e .
-              ERA5_STATS_DIR=${STATS_DIR}
+              ERA5_STATS_DIR="${STATS_DIR:-/workspace/era5_statistics}"
               mkdir -p "$ERA5_STATS_DIR"
               # Verify GCS access if using GCS path
               if [[ "${DATA_DIR}" == gs://* ]]; then
