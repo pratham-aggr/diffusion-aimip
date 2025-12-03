@@ -15,7 +15,7 @@ defaults:
   - logger: wandb.yaml     # set logger here or use command line (e.g. `python train.py logger=wandb`)
 
   # experiment_types configs allow for version control of specific configurations/hyperparameters
-  - experiment: null  # Must be specified via command line: experiment=<name>
+  - experiment: example.yaml
 
   # modes are special collections of config options for different purposes, e.g. debugging
   - mode: default.yaml

@@ -25,7 +25,7 @@ spec:
             claimName: weatherbench
       containers:
         - name: climatebench-edm
-          image: gitlab-registry.nrp-nautilus.io/salvarc/climate-ml:latest
+          image: python:3.10
           imagePullPolicy: IfNotPresent
           workingDir: /workspace
           env:
@@ -90,12 +90,17 @@ spec:
               echo "✓ All required experiment configs found"
               # Patch wandb error handling: fix wandb.errors.errors.Error to wandb.errors.Error
               python -c "c=open('src/experiment_types/_base_experiment.py').read(); c=c.replace('except wandb.errors.errors.Error as e:', 'except wandb.errors.Error as e:'); open('src/experiment_types/_base_experiment.py','w').write(c); print('Patched wandb.errors.errors.Error')" || true
-              python -m pip install --upgrade pip
+              # Install packages - ensure HOME is set for user installs
+              export HOME=/tmp/home
+              mkdir -p "$HOME"
+              python -m pip install --upgrade pip --user
               if [ -f requirements.txt ]; then
-                pip install --no-cache-dir -r requirements.txt
+                pip install --no-cache-dir --user -r requirements.txt
               fi
-              pip install --no-cache-dir cartopy boto3 xbatcher "dask[distributed]" gcsfs seaborn
-              pip install --no-cache-dir -e .
+              pip install --no-cache-dir --user cartopy boto3 xbatcher "dask[distributed]" gcsfs seaborn
+              pip install --no-cache-dir --user -e .[train]
+              # Add user site-packages to PYTHONPATH
+              export PYTHONPATH="${HOME}/.local/lib/python3.10/site-packages:${PYTHONPATH:-}"
               ERA5_STATS_DIR="${STATS_DIR:-/workspace/era5_statistics}"
               if [ -z "$ERA5_STATS_DIR" ]; then
                 ERA5_STATS_DIR="/workspace/era5_statistics"
@@ -165,7 +170,7 @@ spec:
                 datamodule.data_dir=${DATA_DIR} \
                 datamodule.batch_size=64 \
                 datamodule.batch_size_per_gpu=16 \
-                +datamodule.data_dir_stats=${STATS_DIR} \
+                datamodule.data_dir_stats=${STATS_DIR} \
                 +module.pr_clamping=false \
                 logger.wandb.project="ERA5-Climate-Emulation" \
                 logger.wandb.entity="climate-analytics-lab" \
