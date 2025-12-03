@@ -1,0 +1,160 @@
+# @package _global_
+defaults:
+  - override /datamodule: era5_sst_seaice_aimip.yaml
+  - override /model: adm.yaml  # Same UNet architecture
+  - override /module: emulation.yaml  # Emulation module for input→output mapping
+  - override /diffusion: edm.yaml  # EDM diffusion process
+  - override /trainer: ddp.yaml  # Use DDP for multi-GPU training
+  - override /callbacks: comprehensive_wandb.yaml  # Use comprehensive logging
+  - _self_
+
+name: "EmulationSST-SeaIce-EDM-AIMIP-TUNED-V2"
+
+tags:
+  - "climate_emulation"
+  - "sst_forcing"
+  - "sea_ice_forcing"
+  - "diffusion_model"
+  - "edm"
+  - "aimip"
+  - "aimip_submission"
+  - "tuned"
+  - "tuned_v2"
+  - "batch_32"
+  - "crps_eval"
+  - "lr_1e-4"
+
+trainer:
+  max_epochs: 40  # Same as original
+  devices: 2  # Use 2 GPUs (will be set via CUDA_VISIBLE_DEVICES)
+  accelerator: "gpu"
+  strategy: "ddp"  # DDP for multi-GPU training
+  precision: "16-mixed"  # Mixed precision for faster training
+  gradient_clip_val: 5.0
+  gradient_clip_algorithm: "norm"
+  accumulate_grad_batches: 1
+  num_sanity_val_steps: 1  # Run 1 sanity validation step
+  sync_batchnorm: True  # Enable sync_batchnorm for DDP
+  val_check_interval: 1.0
+  check_val_every_n_epoch: 2  # Validate every 2 epochs instead of every epoch (faster training)
+  limit_val_batches: 0.1  # Only use 10% of validation set during training (full validation at end)
+  log_every_n_steps: 50
+  benchmark: True
+  deterministic: False
+
+datamodule:
+  hourly_resolution: 6  # 6-hourly data
+  window: 1
+  horizon: 1
+  batch_size: 64  # Global batch size across all GPUs (maintained at 64)
+  batch_size_per_gpu: 1  # Per-GPU batch size = 1 (will use gradient accumulation to reach global batch_size=64)
+  eval_batch_size: 1  # Reduced to 1 due to OOM with num_predictions=5 (5x memory usage)
+  num_workers: 0  # Set to 0 to avoid DDP data loading deadlock (loads in main process)
+  pin_memory: False  # Disabled for DDP (forced by config_utils anyway)
+  prefetch_factor: 2
+  persistent_workers: False  # Disabled when num_workers=0
+  loss_pressure_weighting_levels: [1000, 850, 700, 500, 250, 100, 50]  # Enable for 3D fields
+
+model:
+  model_channels: 256  # Same capacity
+  channel_mult: [1, 2, 3, 4]
+  num_blocks: 3
+  attn_resolutions: [32, 16, 8]
+  dropout: 0.1
+  upsample_dims: [256, 128]
+  upsample_outputs_by: 1
+  outer_sample_mode: "bilinear"
+  with_time_emb: True  # REQUIRED for EDM - time embeddings for noise level
+
+diffusion:
+  # Loss function
+  loss_function: "wmse"  # Use weighted MSE loss
+  
+  # EDM-specific parameters
+  sigma_min: 0.002
+  sigma_max_inf: 400.0  # Increased from 80.0 for better coverage
+  P_mean: -1.2
+  P_std: 1.2
+  noise_distribution: "lognormal"
+  
+  # Sampling parameters
+  num_steps: 18
+  rho: 7
+  S_churn: 0.0  # Set to 0 for simpler sampling (was 0.05)
+  S_min: 0.0
+  S_max: .inf
+  S_noise: 1.0
+  heun: True
+  
+  # Logging
+  compute_loss_per_sigma: False  # Disabled to reduce memory usage
+
+module:
+  stack_window_to_channel_dim: False
+  enable_inference_dropout: False
+  monitor: "val/avg/rmse"
+  use_ema: True
+  ema_decay: 0.9999
+  num_predictions: 5  # Increased from 1 for CRPS metrics evaluation
+  
+  # TUNED: Learning rate and regularization for better convergence
+  optimizer:
+    name: "AdamW"
+    lr: 1e-4  # Higher LR for faster initial convergence
+    weight_decay: 0.01  # Matches TRAINING_ANALYSIS recommendations
+    eps: 1e-08
+    betas: [0.9, 0.95]
+  
+  # TUNED: Faster warmup for quicker convergence
+  scheduler:
+    name: "linear_warmup_cosine"
+    warmup_epochs: 2  # Reduced from 3 for faster LR ramp-up
+    max_epochs: ${trainer.max_epochs}
+    warmup_start_lr: 1e-6
+    eta_min: 1e-7  # Lower minimum LR (from 1e-6) for finer convergence
+    interval: "step"
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/avg/rmse"
+    mode: "min"
+    save_top_k: 3
+    save_last: True
+    verbose: True
+  
+  early_stopping:
+    monitor: "val/avg/rmse"
+    patience: 5  # Reduced from 12 - stop earlier when plateauing
+    min_delta: 0.002  # Increased from 0.001 - require more improvement
+    mode: "min"
+    verbose: True
+  
+  learning_rate_logging:
+    _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    logging_interval: "step"
+
+logger:
+  wandb:
+    project: "ERA5-Climate-Emulation"
+    name: "EmulationSST-SeaIce-EDM-AIMIP-TUNED-V2"
+    tags: ${tags}
+    group: "sst_seaice_emulation_aimip_tuned_v2"
+    job_type: "diffusion"
+    mode: "online"
+    save_to_wandb: true
+    save_to_s3_bucket: false
+    notes: |
+      AIMIP-1 SUBMISSION - TUNED EDM Diffusion Model V2 for Climate Emulation
+      - Updated from v1 with larger batch size and CRPS evaluation
+      - Inputs: SST + Sea-ice concentration (AMIP protocol)
+      - Outputs: All AIMIP-required fields (3D + surface)
+      - Training: 1979-2014
+      - Test: 2015-2024 (10 years)
+      - Model: EDM with time embeddings
+      - Denoising steps: 18
+      - Batch size: 16 per GPU (effective 32 with 2 GPUs) - reduced from 32/64 due to OOM
+      - num_predictions: 5 (for CRPS metrics)
+      - S_churn: 0 (simpler sampling)
+      - sigma_max_inf: 400 (increased from 80)
+      - Learning rate: 1e-4
+      - Early stopping: patience=5, min_delta=0.002

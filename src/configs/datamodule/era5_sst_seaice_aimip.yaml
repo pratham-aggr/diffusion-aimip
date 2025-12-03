@@ -1,0 +1,116 @@
+defaults:
+  - era5_base.yaml   # general, dataset-independent, parameters
+  - _self_
+
+_target_: src.datamodules.era5.ERA5DataModule2D
+
+# AIMIP-1 Configuration: SST + Sea-ice forcing (AMIP protocol)
+# Input variables: Surface forcing (SST + Sea-ice concentration)
+input_vars:
+  # Sea surface temperature (ocean forcing) - REQUIRED for AIMIP
+  - "sea_surface_temperature"
+  # Sea-ice concentration (AMIP forcing) - REQUIRED for AIMIP
+  - "sea_ice_cover"
+  
+# Output variables: AIMIP-1 required fields
+# Phase 1: Core required fields for minimum submission
+output_vars:
+  # Surface atmospheric variables (REQUIRED)
+  - "surface_pressure"    # ps [Pa] - CMIP name
+  - "2m_temperature"      # tas [K] - CMIP name (2m air temperature)
+  
+  # 3D Fields at pressure levels (REQUIRED for AIMIP)
+  # Temperature at 7 pressure levels: 1000, 850, 700, 500, 250, 100, 50 hPa
+  - "temperature_1000"    # ta at 1000 hPa [K]
+  - "temperature_850"     # ta at 850 hPa [K]
+  - "temperature_700"     # ta at 700 hPa [K]
+  - "temperature_500"     # ta at 500 hPa [K]
+  - "temperature_250"    # ta at 250 hPa [K]
+  - "temperature_100"    # ta at 100 hPa [K]
+  - "temperature_50"     # ta at 50 hPa [K]
+  
+  # Specific humidity at pressure levels (REQUIRED)
+  - "specific_humidity_1000"  # hus at 1000 hPa [kg/kg]
+  - "specific_humidity_850"      # hus at 850 hPa [kg/kg]
+  - "specific_humidity_700"       # hus at 700 hPa [kg/kg]
+  - "specific_humidity_500"      # hus at 500 hPa [kg/kg]
+  - "specific_humidity_250"       # hus at 250 hPa [kg/kg]
+  - "specific_humidity_100"      # hus at 100 hPa [kg/kg]
+  - "specific_humidity_50"       # hus at 50 hPa [kg/kg]
+  
+  # Eastward wind component (REQUIRED)
+  - "u_component_of_wind_1000"   # ua at 1000 hPa [m/s]
+  - "u_component_of_wind_850"     # ua at 850 hPa [m/s]
+  - "u_component_of_wind_700"     # ua at 700 hPa [m/s]
+  - "u_component_of_wind_500"     # ua at 500 hPa [m/s]
+  - "u_component_of_wind_250"     # ua at 250 hPa [m/s]
+  - "u_component_of_wind_100"     # ua at 100 hPa [m/s]
+  - "u_component_of_wind_50"      # ua at 50 hPa [m/s]
+  
+  # Northward wind component (REQUIRED)
+  - "v_component_of_wind_1000"   # va at 1000 hPa [m/s]
+  - "v_component_of_wind_850"     # va at 850 hPa [m/s]
+  - "v_component_of_wind_700"     # va at 700 hPa [m/s]
+  - "v_component_of_wind_500"     # va at 500 hPa [m/s]
+  - "v_component_of_wind_250"     # va at 250 hPa [m/s]
+  - "v_component_of_wind_100"     # va at 100 hPa [m/s]
+  - "v_component_of_wind_50"      # va at 50 hPa [m/s]
+  
+  # Additional surface fields (REQUIRED for AIMIP)
+  - "mean_sea_level_pressure"    # psl [Pa] - sea-level pressure
+  # Note: surface_temperature (ts) not directly available in ERA5 dataset
+  # AIMIP accepts "skin temp. over land or sea ice, SST over ocean, whatever your model uses"
+  # Can use 2m_temperature as proxy or compute during post-processing from 2m_temperature + land_sea_mask
+  # - "surface_temperature"      # ts [K] - will be computed/derived during post-processing
+  - "10m_u_component_of_wind"    # uas [m/s] - 10m eastward wind
+  - "10m_v_component_of_wind"    # vas [m/s] - 10m northward wind
+  
+  # 2m dewpoint temperature (REQUIRED for AIMIP)
+  # Note: ERA5 has 2m dewpoint temperature - variable name may need verification
+  # AIMIP.md line 177: "2 m dewpoint temperature [tdas, kg/kg]"
+  # If not available directly, may need to compute from 2m_temperature and specific_humidity
+  # - "2m_dewpoint_temperature"   # tdas [K] - 2m dewpoint temperature (verify variable name)
+  
+  # Precipitation rate (REQUIRED for AIMIP)
+  # AIMIP.md line 180: "Surface precipitation rate [pr, kg/(m² s)]"
+  # Note: total_precipitation_6hr is 6-hourly accumulated, needs conversion to rate (divide by 21600s)
+  - "total_precipitation_6hr"     # pr [kg/(m² s)] - precipitation rate (after conversion)
+  
+  # Geopotential at 500 hPa (REQUIRED for AIMIP)
+  - "geopotential_500"            # zg500 [m] - 500 hPa geopotential height
+  
+  # Optional but recommended:
+  # - "total_column_water_vapour"  # prw [kg/m²] - precipitable water
+
+# Static fields to include as additional conditioning
+static_fields:
+  - "land_sea_mask"           # Land/ocean distinction
+  - "geopotential_at_surface" # Topography
+  - "lat_lon_embeddings"      # Spatial position encoding
+
+# Disable time embeddings for emulation task
+return_future_date_for_training: False
+
+# AIMIP-1 Training/Test Split
+# Training: 1979-2014 (36 years) - REQUIRED
+train_slice: ["1979-01-01", "2014-12-31"]
+# Validation: 2015-2024 (10 years) - REQUIRED for AIMIP test period
+val_slice: ["2015-01-01", "2024-12-31"]
+# Test: Same as validation for AIMIP
+test_slice: ["2015-01-01", "2024-12-31"]
+
+# Emulation is single-step, not multi-horizon autoregressive  
+multi_horizon: false
+window: 1  # Single timestep window
+horizon: 1  # Single time step output
+prediction_horizon: 1  # No autoregressive rollout during validation
+
+# Increase validation samples for better evaluation
+max_val_samples: 1024  # Use more samples from 10-year validation set
+
+# Emulation module compatibility
+normalization_type: "z-score"  # ERA5 uses z-score normalization
+precip_transform: "log"        # Log transform for precipitation (total_precipitation_6hr)
+
+# Enable image logging to visualize validation predictions
+log_images: true

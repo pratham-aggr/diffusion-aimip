@@ -1,0 +1,93 @@
+defaults:
+  - era5_base.yaml   # general, dataset-independent, parameters
+  - _self_
+
+_target_: src.datamodules.era5.ERA5DataModule2D
+
+# Input variables: Surface forcing (SST + Solar radiation)
+input_vars:
+  # Sea surface temperature (ocean forcing)
+  - "sea_surface_temperature"
+  # Solar radiation (6-hourly accumulated)
+  - "toa_incident_solar_radiation_6hr"
+  # Optional: Add these if you want more surface context
+  # - "sea_ice_cover"
+  # - "surface_pressure"
+  
+# Output variables: Atmospheric conditions to predict
+# NOTE: Currently training with only 2 variables for faster iteration
+output_vars:
+  # Surface atmospheric variables
+  - "2m_temperature"      # Surface temperature
+  - "surface_pressure"    # Surface pressure
+  # - "mean_sea_level_pressure"
+  # - "10m_u_component_of_wind"
+  # - "10m_v_component_of_wind"
+  # - "10m_wind_speed"
+  # - "total_cloud_cover"
+  # - "total_column_water_vapour"
+  
+  # Atmospheric profile at key pressure levels
+  # Temperature at different heights
+  # - "temperature_50"     # ~20 km (stratosphere)
+  # - "temperature_200"    # ~12 km (upper troposphere)
+  # - "temperature_500"    # ~5.5 km (mid troposphere)
+  # - "temperature_850"    # ~1.5 km (lower troposphere)
+  # - "temperature_1000"   # near surface
+  
+  # Geopotential (atmospheric thickness/height)
+  # - "geopotential_50"
+  # - "geopotential_200"
+  # - "geopotential_500"
+  # - "geopotential_850"
+  # - "geopotential_1000"
+  
+  # Specific humidity (moisture)
+  # - "specific_humidity_200"
+  # - "specific_humidity_500"
+  # - "specific_humidity_850"
+  # - "specific_humidity_1000"
+  
+  # Wind components
+  # - "u_component_of_wind_200"
+  # - "u_component_of_wind_500"
+  # - "u_component_of_wind_850"
+  # - "v_component_of_wind_200"
+  # - "v_component_of_wind_500"
+  # - "v_component_of_wind_850"
+
+# Static fields to include as additional conditioning
+static_fields:
+  - "land_sea_mask"           # Land/ocean distinction
+  - "geopotential_at_surface" # Topography
+  - "lat_lon_embeddings"      # Spatial position encoding
+  # These will help the model understand spatial context
+
+# Time features: The model will automatically receive time information
+# through the temporal dimension. You can also use text_conditioning
+# for additional temporal features (day of year, time of day, etc.)
+
+# Disable time embeddings for this emulation task (model doesn't expect them)
+return_future_date_for_training: False
+
+# Training parameters
+train_slice: ["1979-01-01", "2014-12-31"]  # 36 years for training
+val_slice: ["2015-01-01", "2020-12-31"]    # 6 years for validation (increased from 2)
+test_slice: ["2021-01-01", "2021-12-31"]   # 1 year for testing
+
+# Emulation is single-step, not multi-horizon autoregressive  
+multi_horizon: false
+window: 1  # Single timestep window (required by datamodule - must be 1)
+horizon: 1  # Single time step output
+prediction_horizon: 1  # No autoregressive rollout during validation
+
+# Increase validation samples (override base config)
+max_val_samples: 512  # Increased from 128 to use more of the 6-year validation set
+
+# Emulation module compatibility (these are not used for ERA5 but required by the module)
+normalization_type: "z-score"  # ERA5 uses z-score normalization
+precip_transform: "none"       # No precipitation in our outputs
+
+# Enable image logging to visualize validation predictions on wandb
+log_images: true
+

@@ -1,0 +1,139 @@
+# @package _global_
+
+# EDM (Elucidated Diffusion Model) for Climate Emulation
+# Predicts atmospheric state (temperature + pressure) from surface forcing (SST + Solar)
+#
+# This is a DIFFUSION model that denoises from pure noise to predictions
+# Run with: python run.py experiment=era5_sst_solar_emulation_edm trainer.devices=1
+
+defaults:
+  - override /datamodule: era5_sst_solar_to_atmos.yaml
+  - override /model: adm.yaml  # Same UNet architecture as direct prediction
+  - override /module: emulation.yaml  # Emulation module for input→output mapping
+  - override /diffusion: edm.yaml  # EDM diffusion process
+  - override /trainer: default.yaml
+  - override /callbacks: comprehensive_wandb.yaml  # Use comprehensive logging
+  - _self_
+
+name: "EmulationSST-Solar-EDM-6h"
+
+tags:
+  - "climate_emulation"
+  - "sst_forcing"
+  - "solar_forcing"
+  - "diffusion_model"
+  - "edm"
+  - "comparison_baseline"
+
+trainer:
+  max_epochs: 15
+  devices: 1  # Use 1 GPU for stability
+  accelerator: "gpu"
+  precision: "16-mixed"
+  gradient_clip_val: 5.0
+  gradient_clip_algorithm: "norm"
+  val_check_interval: 1.0
+  check_val_every_n_epoch: 1
+  log_every_n_steps: 50
+
+datamodule:
+  hourly_resolution: 6  # 6-hourly data
+  window: 1
+  horizon: 1
+  batch_size: 4  # Maximum batch size that fits in memory
+  eval_batch_size: 1
+  num_workers: 0  # Disable multiprocessing to avoid CUDA worker crashes
+  loss_pressure_weighting_levels: null  # Fix: no pressure level vars, so disable pressure weighting
+
+model:
+  model_channels: 256  # Same capacity as direct model
+  channel_mult: [1, 2, 3, 4]
+  num_blocks: 3
+  attn_resolutions: [32, 16, 8]
+  dropout: 0.1
+  upsample_dims: [256, 128]
+  upsample_outputs_by: 1
+  outer_sample_mode: "bilinear"
+  with_time_emb: True  # REQUIRED for EDM - time embeddings for noise level
+
+diffusion:
+  # Loss function
+  loss_function: "wmse"  # Use weighted MSE loss
+  
+  # EDM-specific parameters
+  sigma_min: 0.002  # Minimum noise level
+  sigma_max_inf: 80.0  # Maximum noise level for inference
+  P_mean: -1.2  # Mean of log-normal noise distribution
+  P_std: 1.2  # Std of log-normal noise distribution
+  noise_distribution: "lognormal"  # Distribution to sample noise levels from
+  
+  # Sampling parameters
+  num_steps: 18  # Number of denoising steps during inference
+  rho: 7  # Exponent for time step discretization
+  S_churn: 0.05  # Noise increase per step (EDM stochasticity)
+  S_min: 0.0
+  S_max: .inf  # OmegaConf syntax for infinity
+  S_noise: 1.0
+  heun: True  # Use Heun's method for ODE integration
+  
+  # Logging
+  compute_loss_per_sigma: True  # Enable loss vs sigma analysis
+
+module:
+  # EmulationExperiment handles input→output mapping for both direct and diffusion models
+  stack_window_to_channel_dim: False
+  enable_inference_dropout: False
+  monitor: "val/avg/rmse"
+  use_ema: True
+  ema_decay: 0.9999
+  num_predictions: 1  # Single deterministic prediction
+  
+  optimizer:
+    name: "AdamW"
+    lr: 5e-5  # Same as direct model - conservative but faster
+    weight_decay: 0.01
+    eps: 1e-08
+    betas: [0.9, 0.95]
+  
+  scheduler:
+    name: "cosine"
+    T_max: ${trainer.max_epochs}
+
+callbacks:
+  model_checkpoint:
+    monitor: "val/avg/rmse"
+    mode: "min"
+    save_top_k: 3
+    save_last: True
+    verbose: True
+  
+  early_stopping:
+    monitor: "val/avg/rmse"
+    patience: 15
+    min_delta: 0.001
+    mode: "min"
+    verbose: True
+  
+  learning_rate_logging:
+    _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    logging_interval: "step"
+
+logger:
+  wandb:
+    project: "ERA5-Climate-Emulation"
+    name: "EmulationSST-Solar-EDM-5e5lr"
+    tags: ${tags}
+    group: "sst_solar_emulation_comparison"  # Group with direct model for comparison
+    job_type: "diffusion"  # Job type for filtering in WandB
+    notes: |
+      EDM Diffusion Model for Climate Emulation
+      - Same inputs: SST + Solar radiation
+      - Same outputs: 2m Temperature + Surface Pressure
+      - Same dataset and splits as direct model
+      - Learning rate: 5e-5 (same as direct model for fair comparison)
+      - Model: DhariwalUNet with time embeddings
+      - Denoising steps: 18
+      - Sigma range: 0.002 to 80.0
+      
+      This run will be compared against direct prediction model
+

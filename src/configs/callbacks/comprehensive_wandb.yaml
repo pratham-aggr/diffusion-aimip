@@ -1,0 +1,51 @@
+# Comprehensive WandB Logging Configuration
+# Adds extensive visualization and monitoring capabilities for both direct and diffusion models
+
+defaults:
+  - wandb.yaml  # Include base wandb callbacks
+  - _self_
+
+# Unified comparison logger (works for both direct and diffusion models)
+unified_comparison_logger:
+  _target_: src.utilities.comparison_wandb_logging.UnifiedComparisonLogger
+  model_type: "auto"  # Auto-detect model type
+  log_every_n_steps: 100  # Log training metrics every N steps
+  log_every_n_epochs: 1  # Log validation analysis every N epochs
+  log_denoising_steps: [100, 50, 10, 1]  # For diffusion models
+  max_samples_per_epoch: 8  # Max samples to analyze per epoch
+
+# Comprehensive gradient, weight, and training dynamics logging
+comprehensive_logger:
+  _target_: src.utilities.wandb_enhanced_logging.ComprehensiveWandBLogger
+  log_gradient_flow: true  # Visualize gradient flow through network
+  log_weights: true  # Log weight statistics
+  log_activations: true  # Monitor activation distributions
+  log_attention_maps: true  # Visualize attention (if available)
+  log_prediction_analysis: true  # Detailed prediction vs target analysis
+  log_spatial_patterns: true  # Spatial error patterns
+  log_every_n_steps: 100  # Log training metrics every N steps
+  log_every_n_epochs: 1  # Log validation analysis every N epochs
+  max_samples_to_log: 4  # Number of validation samples to visualize
+
+# Diffusion-specific logger (only active for diffusion models)
+diffusion_logger:
+  _target_: src.utilities.diffusion_wandb_logging.DiffusionWandBLogger
+  log_sigma_schedule: true  # Log noise level schedule
+  log_denoising_steps: true  # Log denoising progression
+  log_loss_per_sigma: true  # Log loss vs noise level
+  log_sample_diversity: true  # Log sample diversity metrics
+  log_every_n_steps: 100
+  log_every_n_epochs: 1
+  num_denoising_steps_to_log: [100, 50, 10, 1]
+
+# Detailed prediction analysis and visualization
+prediction_logger:
+  _target_: src.utilities.wandb_enhanced_logging.DetailedPredictionLogger
+  log_every_n_epochs: 1  # Analyze predictions every epoch
+  n_samples_to_visualize: 2  # Number of samples to create detailed plots for
+
+# Activation monitoring for detecting dead neurons, saturation
+activation_monitor:
+  _target_: src.utilities.wandb_enhanced_logging.ActivationMonitor
+  log_every_n_epochs: 2  # Monitor activations every 2 epochs
+

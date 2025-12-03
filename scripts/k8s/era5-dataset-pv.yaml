@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: era5-dataset-pv
+  labels:
+    type: local
+    dataset: era5
+spec:
+  capacity:
+    storage: 1Ti  # Adjust if needed, but this is just a label for the dataset size
+  accessModes:
+    - ReadOnlyMany  # Read-only since it's a dataset
+  persistentVolumeReclaimPolicy: Retain  # Don't delete the data when PVC is deleted
+  storageClassName: ""  # Empty means it won't use dynamic provisioning
+  hostPath:
+    path: /data/climate-analytics-lab-shared/ERA5
+    type: Directory
+
