@@ -3,8 +3,8 @@
 set -euo pipefail
 
 # Default values
-JOB_NAME="${JOB_NAME:-aimip-$(date +%Y%m%d-%H%M%S)}"
-WANDB_SECRET_NAME="${WANDB_SECRET_NAME:-praggarwal-wandb}"
+export JOB_NAME="${JOB_NAME:-aimip-$(date +%Y%m%d-%H%M%S)}"
+export WANDB_SECRET_NAME="${WANDB_SECRET_NAME:-praggarwal-wandb}"
 YAML_FILE="${YAML_FILE:-scripts/k8s/aimip.yaml}"
 NAMESPACE="climate-analytics"
 
@@ -35,7 +35,7 @@ fi
 # Substitute variables and deploy
 echo ""
 echo "Substituting variables and deploying job..."
-envsubst < "$YAML_FILE" | kubectl apply -f -
+envsubst '$JOB_NAME $WANDB_SECRET_NAME' < "$YAML_FILE" | kubectl apply -f -
 
 echo ""
 echo "=========================================="
