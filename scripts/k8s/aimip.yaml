@@ -34,7 +34,7 @@ spec:
         - name: climatebench-edm
           image: gitlab-registry.nrp-nautilus.io/salvarc/climate-ml:latest
           imagePullPolicy: IfNotPresent
-          workingDir: /workspace/climatebench
+          workingDir: /workspace
           env:
             - name: WANDB_API_KEY
               valueFrom:
@@ -138,14 +138,6 @@ spec:
                   echo "Searching for similar zarr datasets..."
                   ZARR_FILE=$(find /weatherbench -maxdepth 6 -name "*1959-2022*6h*240x121*.zarr" -type d 2>/dev/null | head -1)
                 fi
-                # If still not found, search for any ERA5 zarr
-                if [ -z "$ZARR_FILE" ]; then
-                  echo "Searching for any ERA5 zarr dataset..."
-                  ZARR_FILE=$(find /weatherbench -maxdepth 6 -path "*/ERA5/*.zarr" -type d 2>/dev/null | head -1)
-                fi
-                if [ -n "$ZARR_FILE" ]; then
-                  echo "Found zarr dataset at: $ZARR_FILE"
-                  export DATA_DIR="$ZARR_FILE"
                 else
                   echo "ERROR: Could not find zarr dataset. Searched in /weatherbench (maxdepth 6)."
                   echo "NOTE: Using GCS path is recommended: gs://weatherbench2/datasets/era5/..."
@@ -205,6 +197,14 @@ spec:
                 RESULTS_DIR=$RESULTS_DIR_BASE/${RUN_ID}
                 mkdir -p "$RESULTS_DIR/logs"
               fi
+              # Ensure we're in the climatebench directory
+              if [ ! -f "run.py" ]; then
+                echo "ERROR: run.py not found. Current directory: $(pwd)"
+                echo "Contents of current directory:"
+                ls -la
+                exit 1
+              fi
+              echo "Running training from directory: $(pwd)"
               python run.py \
                 experiment=era5_sst_seaice_emulation_edm_aimip_tuned_v2 \
                 trainer.accelerator="gpu" \

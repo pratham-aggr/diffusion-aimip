@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Default values
-export JOB_NAME="${JOB_NAME:-aimip-$(date +%Y%m%d-%H%M%S)}"
+export JOB_NAME="aimip"
 export WANDB_SECRET_NAME="${WANDB_SECRET_NAME:-praggarwal-wandb}"
 YAML_FILE="${YAML_FILE:-scripts/k8s/aimip.yaml}"
 NAMESPACE="climate-analytics"
