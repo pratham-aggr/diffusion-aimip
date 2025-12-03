@@ -61,37 +61,25 @@ spec:
               mkdir -p /workspace
               cd /workspace
               
-              # Use pre-cloned repository from persistent volume (weatherbench PVC) if available
-              PRE_CLONED_REPO="/weatherbench/climatebench-repo"
-              if [ -d "$PRE_CLONED_REPO" ] && [ -f "$PRE_CLONED_REPO/.git/config" ]; then
-                echo "Using pre-cloned repository from: $PRE_CLONED_REPO"
-                rm -rf climatebench
-                cp -r "$PRE_CLONED_REPO" climatebench
-                cd climatebench
-                
-                # Verify we're on the correct branch
-                echo "Repository copied. Current branch:"
-                git branch
-                echo "Latest commit:"
-                git log -1 --oneline
-                
-                # Ensure we're on main branch (default)
-                CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-                if [ "$CURRENT_BRANCH" != "main" ]; then
-                  echo "Switching to main branch..."
-                  git checkout main || {
-                    echo "WARNING: Could not checkout main branch, staying on $CURRENT_BRANCH"
-                  }
-                fi
-              else
-                echo "Pre-cloned repository not found. Cloning public repository..."
-                rm -rf climatebench
-                git clone https://github.com/pratham-aggr/diffusion-aimip.git climatebench
-                cd climatebench
-                # Repository uses main branch by default
+              # Always clone fresh from GitHub to ensure latest changes
+              echo "Cloning repository from GitHub..."
+              rm -rf climatebench
+              git clone https://github.com/pratham-aggr/diffusion-aimip.git climatebench
+              cd climatebench
+                            
+              # Verify repository and key files
+              echo "Repository cloned. Current branch:"
+              git branch
+              echo "Latest commit:"
+              git log -1 --oneline
+              echo "Verifying key files exist..."
+              if [ ! -f "src/configs/experiments/example.yaml" ]; then
+                echo "ERROR: example.yaml not found in repository!"
+                echo "Contents of src/configs/experiments/:"
+                ls -la src/configs/experiments/ 2>/dev/null || echo "Directory does not exist"
+                exit 1
               fi
-              # Patch compute_era5_statistics.py: replace any os.path.exists check with GCS-aware version
-              python -c "c=open('compute_era5_statistics.py').read(); import re; c=re.sub(r'os\.path\.exists\(zarr_path\)', 'zarr_path.startswith(\"gs://\") or os.path.exists(zarr_path)', c); c=re.sub(r'if\s+not\s+(zarr_path\.startswith|os\.path\.exists)', r'if not zarr_path.startswith(\"gs://\") and not os.path.exists', c); open('compute_era5_statistics.py','w').write(c); print('Patched os.path.exists checks')" || python -c "c=open('compute_era5_statistics.py').read(); c=c.replace('if not os.path.exists(zarr_path):', 'if not zarr_path.startswith(\"gs://\") and not os.path.exists(zarr_path):'); open('compute_era5_statistics.py','w').write(c); print('Patched')" || true
+              echo "✓ example.yaml found"
               # Patch wandb error handling: fix wandb.errors.errors.Error to wandb.errors.Error
               python -c "c=open('src/experiment_types/_base_experiment.py').read(); c=c.replace('except wandb.errors.errors.Error as e:', 'except wandb.errors.Error as e:'); open('src/experiment_types/_base_experiment.py','w').write(c); print('Patched wandb.errors.errors.Error')" || true
               python -m pip install --upgrade pip
@@ -105,16 +93,9 @@ spec:
                 ERA5_STATS_DIR="/workspace/era5_statistics"
               fi
               mkdir -p "$ERA5_STATS_DIR"
-              # Use exact GCS dataset path
+              # Use exact GCS dataset path (public bucket, no credentials needed)
               echo "Using GCS dataset: ${DATA_DIR}"
-              echo "Verifying GCS dataset access..."
-              # Try with credentials if available, otherwise use default/anonymous
-              if [ -f "/etc/gcs/key.json" ]; then
-                export GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
-                echo "Using GCS credentials from secret"
-              else
-                echo "No GCS credentials found, using default authentication (public bucket or application-default)"
-              fi
+              echo "Verifying GCS dataset access (public bucket)..."
               python -c "import gcsfs; fs = gcsfs.GCSFileSystem(); exists = fs.exists('${DATA_DIR}'); print(f'GCS dataset accessible: {exists}'); exit(0 if exists else 1)" || {
                 echo "ERROR: GCS dataset not accessible: ${DATA_DIR}"
                 exit 1
@@ -124,42 +105,33 @@ spec:
               RESULTS_DIR_BASE=/results
               mkdir -p "$RESULTS_DIR_BASE" || true
               chmod -R 777 "$RESULTS_DIR_BASE" || true
-              # Check persistent location first, then workspace
-              # Use weatherbench PVC for persistent storage
+              # Check for statistics in weatherbench PVC (required)
               PERSISTENT_STATS_DIR=/weatherbench/era5_statistics
-              mkdir -p "$PERSISTENT_STATS_DIR" || true
-              if [ -d "$PERSISTENT_STATS_DIR" ]; then
-                chmod -R 777 "$PERSISTENT_STATS_DIR" || true
+              echo "Checking for statistics in PVC: $PERSISTENT_STATS_DIR"
+              
+              if [ ! -f "$PERSISTENT_STATS_DIR/era5_mean.nc" ] || [ ! -f "$PERSISTENT_STATS_DIR/era5_std.nc" ]; then
+                echo "ERROR: Statistics files not found in PVC!"
+                echo "Expected files:"
+                echo "  - $PERSISTENT_STATS_DIR/era5_mean.nc"
+                echo "  - $PERSISTENT_STATS_DIR/era5_std.nc"
+                echo ""
+                echo "Please upload statistics to the weatherbench PVC first using:"
+                echo "  bash scripts/k8s/upload-stats.sh"
+                echo ""
+                echo "Contents of $PERSISTENT_STATS_DIR:"
+                ls -la "$PERSISTENT_STATS_DIR" 2>&1 || echo "Directory does not exist"
+                exit 1
               fi
-              if [ -f "$PERSISTENT_STATS_DIR/era5_mean.nc" ] && [ -f "$PERSISTENT_STATS_DIR/era5_std.nc" ]; then
-                echo "Found existing statistics in persistent location: $PERSISTENT_STATS_DIR"
-                mkdir -p "$ERA5_STATS_DIR"
-                cp "$PERSISTENT_STATS_DIR/era5_mean.nc" "$ERA5_STATS_DIR/" || true
-                cp "$PERSISTENT_STATS_DIR/era5_std.nc" "$ERA5_STATS_DIR/" || true
-                echo "Copied statistics to $ERA5_STATS_DIR"
-              elif [ ! -f "$ERA5_STATS_DIR/era5_mean.nc" ] || [ ! -f "$ERA5_STATS_DIR/era5_std.nc" ]; then
-                echo "Computing statistics (this may take 30-60 minutes)..."
-                if [ ! -f "compute_era5_statistics.py" ]; then
-                  echo "ERROR: compute_era5_statistics.py not found in repository. Please ensure it's committed and pushed to GitHub."
-                  exit 1
-                fi
-                python compute_era5_statistics.py \
-                  --zarr-path ${DATA_DIR} \
-                  --output-dir "$ERA5_STATS_DIR" \
-                  --train-start 1979-01-01 \
-                  --train-end 2020-12-31 \
-                  --force
-                # Copy computed stats to persistent location for future runs
-                mkdir -p "$PERSISTENT_STATS_DIR" || true
-                if [ -d "$PERSISTENT_STATS_DIR" ]; then
-                  chmod -R 777 "$PERSISTENT_STATS_DIR" || true
-                fi
-                cp "$ERA5_STATS_DIR/era5_mean.nc" "$PERSISTENT_STATS_DIR/" 2>/dev/null || true
-                cp "$ERA5_STATS_DIR/era5_std.nc" "$PERSISTENT_STATS_DIR/" 2>/dev/null || true
-                echo "Saved statistics to persistent location: $PERSISTENT_STATS_DIR"
-              else
-                echo "Statistics already exist in $ERA5_STATS_DIR"
-              fi
+              
+              echo "✓ Found statistics in PVC: $PERSISTENT_STATS_DIR"
+              echo "Files:"
+              ls -lh "$PERSISTENT_STATS_DIR"/*.nc
+              
+              # Copy statistics to workspace for training
+              mkdir -p "$ERA5_STATS_DIR"
+              cp "$PERSISTENT_STATS_DIR/era5_mean.nc" "$ERA5_STATS_DIR/"
+              cp "$PERSISTENT_STATS_DIR/era5_std.nc" "$ERA5_STATS_DIR/"
+              echo "Copied statistics to $ERA5_STATS_DIR"
               RESULTS_DIR=$RESULTS_DIR_BASE/${RUN_ID}
               if ! mkdir -p "$RESULTS_DIR/logs"; then
                 echo "WARNING: Unable to write to $RESULTS_DIR_BASE. Falling back to /workspace/results."
