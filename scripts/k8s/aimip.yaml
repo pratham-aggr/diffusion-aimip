@@ -64,8 +64,12 @@ spec:
               # Always clone fresh from GitHub to ensure latest changes
               echo "Cloning repository from GitHub..."
               rm -rf climatebench
-              git clone https://github.com/pratham-aggr/diffusion-aimip.git climatebench
+              git clone --depth=1 https://github.com/pratham-aggr/diffusion-aimip.git climatebench
               cd climatebench
+              
+              # Ensure we're on main and have latest
+              git checkout main || true
+              git pull origin main || true
                             
               # Verify repository and key files
               echo "Repository cloned. Current branch:"
@@ -73,13 +77,17 @@ spec:
               echo "Latest commit:"
               git log -1 --oneline
               echo "Verifying key files exist..."
+              echo "Contents of src/configs/experiments/:"
+              ls -la src/configs/experiments/ 2>/dev/null || echo "Directory does not exist"
               if [ ! -f "src/configs/experiments/example.yaml" ]; then
                 echo "ERROR: example.yaml not found in repository!"
-                echo "Contents of src/configs/experiments/:"
-                ls -la src/configs/experiments/ 2>/dev/null || echo "Directory does not exist"
                 exit 1
               fi
-              echo "✓ example.yaml found"
+              if [ ! -f "src/configs/experiments/era5_sst_seaice_emulation_edm_aimip_tuned_v2.yaml" ]; then
+                echo "ERROR: era5_sst_seaice_emulation_edm_aimip_tuned_v2.yaml not found in repository!"
+                exit 1
+              fi
+              echo "✓ All required experiment configs found"
               # Patch wandb error handling: fix wandb.errors.errors.Error to wandb.errors.Error
               python -c "c=open('src/experiment_types/_base_experiment.py').read(); c=c.replace('except wandb.errors.errors.Error as e:', 'except wandb.errors.Error as e:'); open('src/experiment_types/_base_experiment.py','w').write(c); print('Patched wandb.errors.errors.Error')" || true
               python -m pip install --upgrade pip
