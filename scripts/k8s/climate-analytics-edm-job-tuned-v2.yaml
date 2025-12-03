@@ -55,18 +55,6 @@ spec:
               value: gs://weatherbench2/datasets/era5/1959-2022-6h-240x121_equiangular_with_poles_conservative.zarr
             - name: STATS_DIR
               value: /workspace/era5_statistics
-            - name: GIT_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: praggarwal-github
-                  key: user
-                  optional: false
-            - name: GIT_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: praggarwal-github
-                  key: token
-                  optional: false
             - name: WANDB_DIR
               value: /wandb
             - name: WANDB_CONFIG_DIR
@@ -86,23 +74,10 @@ spec:
           args:
             - |
               set -euo pipefail
-              # Export environment variables immediately - they should be set by Kubernetes
-              export GIT_USERNAME
-              export GIT_PASSWORD
-              # Verify they are set
-              if [ -z "${GIT_USERNAME:-}" ] || [ -z "${GIT_PASSWORD:-}" ]; then
-                echo "ERROR: GIT_USERNAME or GIT_PASSWORD is empty!"
-                echo "GIT_USERNAME: [${GIT_USERNAME:-}] (length: ${#GIT_USERNAME:-0})"
-                echo "GIT_PASSWORD: [${GIT_PASSWORD:0:10:-}] (length: ${#GIT_PASSWORD:-0})"
-                echo "Environment dump:"
-                env | grep '^GIT_' || echo "No GIT variables found"
-                exit 1
-              fi
-              echo "✓ Credentials loaded successfully"
               mkdir -p /workspace
               cd /workspace
               
-              # Use pre-cloned repository from persistent volume (weatherbench PVC)
+              # Use pre-cloned repository from persistent volume (weatherbench PVC) if available
               PRE_CLONED_REPO="/weatherbench/climatebench-repo"
               if [ -d "$PRE_CLONED_REPO" ] && [ -f "$PRE_CLONED_REPO/.git/config" ]; then
                 echo "Using pre-cloned repository from: $PRE_CLONED_REPO"
@@ -125,23 +100,13 @@ spec:
                   }
                 fi
               else
-                echo "WARNING: Pre-cloned repository not found at $PRE_CLONED_REPO"
-                echo "Falling back to git clone (this may fail if authentication is not set up)..."
+                echo "Pre-cloned repository not found. Cloning public repository..."
                 rm -rf climatebench
-                
-                # Fallback: try to clone (but this likely won't work)
-                export GIT_USERNAME
-                export GIT_PASSWORD
-                git config --global credential.helper store
-                printf "https://%s:%s@github.com\n" "${GIT_USERNAME}" "${GIT_PASSWORD}" > ~/.git-credentials
-                chmod 600 ~/.git-credentials
-                git clone -b pratham "https://github.com/salvaRC/climatebench.git" || {
-                  echo "ERROR: Clone failed. Please run the pre-clone job first:"
-                  echo "  kubectl apply -f scripts/k8s/pre-clone-repo-job.yaml"
-                  echo "  kubectl wait --for=condition=complete --timeout=600s job/pre-clone-climatebench -n climate-analytics"
-                  exit 1
-                }
+                git clone https://github.com/pratham-aggr/diffusion-aimip.git climatebench
                 cd climatebench
+                git checkout pratham || {
+                  echo "WARNING: Could not checkout pratham branch, staying on default branch"
+                }
               fi
               # Patch compute_era5_statistics.py: replace any os.path.exists check with GCS-aware version
               python -c "c=open('compute_era5_statistics.py').read(); import re; c=re.sub(r'os\.path\.exists\(zarr_path\)', 'zarr_path.startswith(\"gs://\") or os.path.exists(zarr_path)', c); c=re.sub(r'if\s+not\s+(zarr_path\.startswith|os\.path\.exists)', r'if not zarr_path.startswith(\"gs://\") and not os.path.exists', c); open('compute_era5_statistics.py','w').write(c); print('Patched os.path.exists checks')" || python -c "c=open('compute_era5_statistics.py').read(); c=c.replace('if not os.path.exists(zarr_path):', 'if not zarr_path.startswith(\"gs://\") and not os.path.exists(zarr_path):'); open('compute_era5_statistics.py','w').write(c); print('Patched')" || true
