@@ -166,7 +166,9 @@ spec:
               # Use weatherbench PVC for persistent storage
               PERSISTENT_STATS_DIR=/weatherbench/era5_statistics
               mkdir -p "$PERSISTENT_STATS_DIR" || true
-              chmod -R 777 "$PERSISTENT_STATS_DIR" || true
+              if [ -d "$PERSISTENT_STATS_DIR" ]; then
+                chmod -R 777 "$PERSISTENT_STATS_DIR" || true
+              fi
               if [ -f "$PERSISTENT_STATS_DIR/era5_mean.nc" ] && [ -f "$PERSISTENT_STATS_DIR/era5_std.nc" ]; then
                 echo "Found existing statistics in persistent location: $PERSISTENT_STATS_DIR"
                 mkdir -p "$ERA5_STATS_DIR"
@@ -175,6 +177,10 @@ spec:
                 echo "Copied statistics to $ERA5_STATS_DIR"
               elif [ ! -f "$ERA5_STATS_DIR/era5_mean.nc" ] || [ ! -f "$ERA5_STATS_DIR/era5_std.nc" ]; then
                 echo "Computing statistics (this may take 30-60 minutes)..."
+                if [ ! -f "compute_era5_statistics.py" ]; then
+                  echo "ERROR: compute_era5_statistics.py not found in repository. Please ensure it's committed and pushed to GitHub."
+                  exit 1
+                fi
                 python compute_era5_statistics.py \
                   --zarr-path ${DATA_DIR} \
                   --output-dir "$ERA5_STATS_DIR" \
@@ -183,7 +189,9 @@ spec:
                   --force
                 # Copy computed stats to persistent location for future runs
                 mkdir -p "$PERSISTENT_STATS_DIR" || true
-                chmod -R 777 "$PERSISTENT_STATS_DIR" || true
+                if [ -d "$PERSISTENT_STATS_DIR" ]; then
+                  chmod -R 777 "$PERSISTENT_STATS_DIR" || true
+                fi
                 cp "$ERA5_STATS_DIR/era5_mean.nc" "$PERSISTENT_STATS_DIR/" 2>/dev/null || true
                 cp "$ERA5_STATS_DIR/era5_std.nc" "$PERSISTENT_STATS_DIR/" 2>/dev/null || true
                 echo "Saved statistics to persistent location: $PERSISTENT_STATS_DIR"

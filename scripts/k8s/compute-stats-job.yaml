@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: compute-era5-stats-${TIMESTAMP}
+  namespace: climate-analytics
+spec:
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: weatherbench
+          persistentVolumeClaim:
+            claimName: weatherbench
+      containers:
+        - name: compute-stats
+          image: python:3.10
+          workingDir: /workspace
+          env:
+            - name: DATA_DIR
+              value: gs://weatherbench2/datasets/era5/1959-2022-6h-240x121_equiangular_with_poles_conservative.zarr
+            - name: OUTPUT_DIR
+              value: /weatherbench/era5_statistics
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              echo "Installing dependencies..."
+              pip install --no-cache-dir xarray zarr gcsfs tqdm numpy
+              
+              echo "Downloading compute_era5_statistics.py from GitHub..."
+              curl -o compute_era5_statistics.py https://raw.githubusercontent.com/pratham-aggr/diffusion-aimip/main/compute_era5_statistics.py || {
+                echo "Failed to download script. You may need to commit and push it first."
+                exit 1
+              }
+              
+              echo "Creating output directory..."
+              mkdir -p "$OUTPUT_DIR"
+              
+              echo "Computing statistics (this may take 30-60 minutes)..."
+              python compute_era5_statistics.py \
+                --zarr-path "$DATA_DIR" \
+                --output-dir "$OUTPUT_DIR" \
+                --train-start 1979-01-01 \
+                --train-end 2020-12-31 \
+                --force
+              
+              echo "Statistics computed successfully!"
+              echo "Files saved to: $OUTPUT_DIR"
+              ls -lh "$OUTPUT_DIR"
+          volumeMounts:
+            - name: weatherbench
+              mountPath: /weatherbench
+          resources:
+            requests:
+              cpu: "4"
+              memory: "16Gi"
+            limits:
+              cpu: "8"
+              memory: "32Gi"
+
