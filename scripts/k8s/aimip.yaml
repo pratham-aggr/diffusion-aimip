@@ -7,8 +7,6 @@ spec:
   ttlSecondsAfterFinished: 86400
   template:
     spec:
-      # nodeSelector:
-      #   kubernetes.io/hostname: k8s-haosu-18.sdsc.optiputer.net
       restartPolicy: Never
       securityContext:
         fsGroup: 1000
@@ -25,11 +23,6 @@ spec:
         - name: weatherbench
           persistentVolumeClaim:
             claimName: weatherbench
-        # GCS credentials (optional - only needed if bucket requires authentication)
-        # Uncomment and create the secret if needed:
-        # - name: gcs-credentials
-        #   secret:
-        #     secretName: gcs-credentials
       containers:
         - name: climatebench-edm
           image: gitlab-registry.nrp-nautilus.io/salvarc/climate-ml:latest
@@ -61,9 +54,6 @@ spec:
               value: "1"
             - name: TORCH_CUDNN_V8_API_ENABLED
               value: "1"
-            # GCS credentials (optional - only set if secret exists)
-            # - name: GOOGLE_APPLICATION_CREDENTIALS
-            #   value: /etc/gcs/key.json
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -115,41 +105,21 @@ spec:
                 ERA5_STATS_DIR="/workspace/era5_statistics"
               fi
               mkdir -p "$ERA5_STATS_DIR"
-              # Verify GCS access if using GCS path
-              if [[ "${DATA_DIR}" == gs://* ]]; then
-                echo "Using GCS dataset: ${DATA_DIR}"
-                echo "Checking GCS dataset access..."
-                # Try with credentials if available, otherwise use default/anonymous
-                if [ -f "/etc/gcs/key.json" ]; then
-                  export GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
-                  echo "Using GCS credentials from secret"
-                else
-                  echo "No GCS credentials found, using default authentication (public bucket or application-default)"
-                fi
-                python -c "import gcsfs; fs = gcsfs.GCSFileSystem(); print('GCS accessible:', fs.exists('${DATA_DIR}'))" || echo "GCS check failed, but continuing..."
-              fi
-              # Try to find the zarr dataset if the configured path doesn't exist (for local paths only)
-              if [[ "${DATA_DIR}" != gs://* ]] && [ ! -d "${DATA_DIR}" ]; then
-                echo "WARNING: Data directory ${DATA_DIR} not found. Searching for zarr dataset..."
-                # Search for exact name first (check weatherbench PVC)
-                ZARR_FILE=$(find /weatherbench -maxdepth 6 -name "1959-2022-6h-240x121_equiangular_with_poles_conservative.zarr" -type d 2>/dev/null | head -1)
-                # If not found, search for similar patterns
-                if [ -z "$ZARR_FILE" ]; then
-                  echo "Searching for similar zarr datasets..."
-                  ZARR_FILE=$(find /weatherbench -maxdepth 6 -name "*1959-2022*6h*240x121*.zarr" -type d 2>/dev/null | head -1)
-                fi
-                else
-                  echo "ERROR: Could not find zarr dataset. Searched in /weatherbench (maxdepth 6)."
-                  echo "NOTE: Using GCS path is recommended: gs://weatherbench2/datasets/era5/..."
-                  echo "Contents of /weatherbench:"
-                  ls -la /weatherbench 2>/dev/null | head -20 || true
-                  echo "Searching for any .zarr directories:"
-                  find /weatherbench -maxdepth 4 -name "*.zarr" -type d 2>/dev/null | head -10 || true
-                  exit 1
-                fi
+              # Use exact GCS dataset path
+              echo "Using GCS dataset: ${DATA_DIR}"
+              echo "Verifying GCS dataset access..."
+              # Try with credentials if available, otherwise use default/anonymous
+              if [ -f "/etc/gcs/key.json" ]; then
+                export GOOGLE_APPLICATION_CREDENTIALS=/etc/gcs/key.json
+                echo "Using GCS credentials from secret"
               else
-                echo "Using configured data directory: ${DATA_DIR}"
+                echo "No GCS credentials found, using default authentication (public bucket or application-default)"
               fi
+              python -c "import gcsfs; fs = gcsfs.GCSFileSystem(); exists = fs.exists('${DATA_DIR}'); print(f'GCS dataset accessible: {exists}'); exit(0 if exists else 1)" || {
+                echo "ERROR: GCS dataset not accessible: ${DATA_DIR}"
+                exit 1
+              }
+              echo "GCS dataset verified: ${DATA_DIR}"
               # Setup results directory with proper permissions first
               RESULTS_DIR_BASE=/results
               mkdir -p "$RESULTS_DIR_BASE" || true
@@ -240,8 +210,4 @@ spec:
               mountPath: /results
             - name: weatherbench
               mountPath: /weatherbench
-            # GCS credentials mount (uncomment if secret exists)
-            # - name: gcs-credentials
-            #   mountPath: /etc/gcs
-            #   readOnly: true
 
