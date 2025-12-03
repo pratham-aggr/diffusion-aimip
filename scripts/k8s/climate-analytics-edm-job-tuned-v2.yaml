@@ -19,12 +19,6 @@ spec:
           emptyDir: {}
         - name: wandb-cache
           emptyDir: {}
-        - name: cephfs-data
-          persistentVolumeClaim:
-            claimName: cephfs
-        - name: ceph-poc
-          persistentVolumeClaim:
-            claimName: ceph-poc
         - name: cb-results
           persistentVolumeClaim:
             claimName: cb-daily-checkpoints
@@ -136,33 +130,28 @@ spec:
               # Try to find the zarr dataset if the configured path doesn't exist (for local paths only)
               if [[ "${DATA_DIR}" != gs://* ]] && [ ! -d "${DATA_DIR}" ]; then
                 echo "WARNING: Data directory ${DATA_DIR} not found. Searching for zarr dataset..."
-                # Search for exact name first (check weatherbench, data, and ceph-poc)
-                ZARR_FILE=$(find /weatherbench /data /ceph-poc -maxdepth 6 -name "1959-2022-6h-240x121_equiangular_with_poles_conservative.zarr" -type d 2>/dev/null | head -1)
+                # Search for exact name first (check weatherbench PVC)
+                ZARR_FILE=$(find /weatherbench -maxdepth 6 -name "1959-2022-6h-240x121_equiangular_with_poles_conservative.zarr" -type d 2>/dev/null | head -1)
                 # If not found, search for similar patterns
                 if [ -z "$ZARR_FILE" ]; then
                   echo "Searching for similar zarr datasets..."
-                  ZARR_FILE=$(find /weatherbench /data /ceph-poc -maxdepth 6 -name "*1959-2022*6h*240x121*.zarr" -type d 2>/dev/null | head -1)
+                  ZARR_FILE=$(find /weatherbench -maxdepth 6 -name "*1959-2022*6h*240x121*.zarr" -type d 2>/dev/null | head -1)
                 fi
                 # If still not found, search for any ERA5 zarr
                 if [ -z "$ZARR_FILE" ]; then
                   echo "Searching for any ERA5 zarr dataset..."
-                  ZARR_FILE=$(find /weatherbench /data /ceph-poc -maxdepth 6 -path "*/ERA5/*.zarr" -type d 2>/dev/null | head -1)
+                  ZARR_FILE=$(find /weatherbench -maxdepth 6 -path "*/ERA5/*.zarr" -type d 2>/dev/null | head -1)
                 fi
                 if [ -n "$ZARR_FILE" ]; then
                   echo "Found zarr dataset at: $ZARR_FILE"
                   export DATA_DIR="$ZARR_FILE"
                 else
-                  echo "ERROR: Could not find zarr dataset. Searched in /weatherbench, /data and /ceph-poc (maxdepth 6)."
-                  echo "NOTE: The dataset exists on the node at /data/climate-analytics-lab-shared/ERA5/..."
-                  echo "      You may need to copy it to the weatherbench PVC."
+                  echo "ERROR: Could not find zarr dataset. Searched in /weatherbench (maxdepth 6)."
+                  echo "NOTE: Using GCS path is recommended: gs://weatherbench2/datasets/era5/..."
                   echo "Contents of /weatherbench:"
                   ls -la /weatherbench 2>/dev/null | head -20 || true
-                  echo "Contents of /data:"
-                  ls -la /data 2>/dev/null | head -20 || true
-                  echo "Contents of /ceph-poc:"
-                  ls -la /ceph-poc 2>/dev/null | head -20 || true
                   echo "Searching for any .zarr directories:"
-                  find /weatherbench /data /ceph-poc -maxdepth 4 -name "*.zarr" -type d 2>/dev/null | head -10 || true
+                  find /weatherbench -maxdepth 4 -name "*.zarr" -type d 2>/dev/null | head -10 || true
                   exit 1
                 fi
               else
@@ -173,8 +162,8 @@ spec:
               mkdir -p "$RESULTS_DIR_BASE" || true
               chmod -R 777 "$RESULTS_DIR_BASE" || true
               # Check persistent location first, then workspace
-              # Use cephfs (/data) since /results is not writable for creating new dirs
-              PERSISTENT_STATS_DIR=/data/era5_statistics
+              # Use weatherbench PVC for persistent storage
+              PERSISTENT_STATS_DIR=/weatherbench/era5_statistics
               mkdir -p "$PERSISTENT_STATS_DIR" || true
               chmod -R 777 "$PERSISTENT_STATS_DIR" || true
               if [ -f "$PERSISTENT_STATS_DIR/era5_mean.nc" ] && [ -f "$PERSISTENT_STATS_DIR/era5_std.nc" ]; then
@@ -238,10 +227,6 @@ spec:
               mountPath: /workspace
             - name: wandb-cache
               mountPath: /wandb
-            - name: cephfs-data
-              mountPath: /data
-            - name: ceph-poc
-              mountPath: /ceph-poc
             - name: cb-results
               mountPath: /results
             - name: weatherbench
