@@ -18,11 +18,6 @@ echo "YAML File: $YAML_FILE"
 echo "Namespace: $NAMESPACE"
 echo "=========================================="
 
-# Check if namespace exists
-if ! kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
-    echo "ERROR: Namespace '$NAMESPACE' does not exist!"
-    exit 1
-fi
 
 # Check if wandb secret exists
 if ! kubectl get secret "$WANDB_SECRET_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then

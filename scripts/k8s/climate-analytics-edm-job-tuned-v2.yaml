@@ -85,12 +85,12 @@ spec:
                 echo "Latest commit:"
                 git log -1 --oneline
                 
-                # Ensure we're on pratham branch
+                # Ensure we're on main branch (default)
                 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-                if [ "$CURRENT_BRANCH" != "pratham" ]; then
-                  echo "Switching to pratham branch..."
-                  git checkout pratham || {
-                    echo "WARNING: Could not checkout pratham branch, staying on $CURRENT_BRANCH"
+                if [ "$CURRENT_BRANCH" != "main" ]; then
+                  echo "Switching to main branch..."
+                  git checkout main || {
+                    echo "WARNING: Could not checkout main branch, staying on $CURRENT_BRANCH"
                   }
                 fi
               else
@@ -98,9 +98,7 @@ spec:
                 rm -rf climatebench
                 git clone https://github.com/pratham-aggr/diffusion-aimip.git climatebench
                 cd climatebench
-                git checkout pratham || {
-                  echo "WARNING: Could not checkout pratham branch, staying on default branch"
-                }
+                # Repository uses main branch by default
               fi
               # Patch compute_era5_statistics.py: replace any os.path.exists check with GCS-aware version
               python -c "c=open('compute_era5_statistics.py').read(); import re; c=re.sub(r'os\.path\.exists\(zarr_path\)', 'zarr_path.startswith(\"gs://\") or os.path.exists(zarr_path)', c); c=re.sub(r'if\s+not\s+(zarr_path\.startswith|os\.path\.exists)', r'if not zarr_path.startswith(\"gs://\") and not os.path.exists', c); open('compute_era5_statistics.py','w').write(c); print('Patched os.path.exists checks')" || python -c "c=open('compute_era5_statistics.py').read(); c=c.replace('if not os.path.exists(zarr_path):', 'if not zarr_path.startswith(\"gs://\") and not os.path.exists(zarr_path):'); open('compute_era5_statistics.py','w').write(c); print('Patched')" || true
