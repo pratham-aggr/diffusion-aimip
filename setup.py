@@ -61,6 +61,7 @@ To create the package for pypi.
     you need to go back to main before executing this.
 """
 
+import os
 import re
 
 # Import command from setuptools instead of distutils.core.Command for compatibility with Python>3.12
@@ -181,7 +182,7 @@ setup(
     name="dyffusion",
     version="0.0.1",  # expected format is one of x.y.z.dev0, or x.y.z.rc1 or x.y.z (no to dashes, yes to dots)
     description="DYffusion: A Dynamics-informed Diffusion Model for Probabilistic Spatiotemporal Forecasting",
-    long_description=open("README.md", "r", encoding="utf-8").read(),
+    long_description=(open("README.md", "r", encoding="utf-8").read() if os.path.exists("README.md") else ""),
     long_description_content_type="text/markdown",
     author="Salva Rühling Cachay",
     author_email="salvaruehling@gmail.com",
