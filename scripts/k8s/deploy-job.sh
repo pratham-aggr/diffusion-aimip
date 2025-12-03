@@ -1,12 +1,11 @@
 #!/bin/bash
-# Deployment script for climate-analytics-edm-job-tuned-v2
 
 set -euo pipefail
 
 # Default values
-JOB_NAME="${JOB_NAME:-climate-edm-aimip-$(date +%Y%m%d-%H%M%S)}"
+JOB_NAME="${JOB_NAME:-aimip-$(date +%Y%m%d-%H%M%S)}"
 WANDB_SECRET_NAME="${WANDB_SECRET_NAME:-praggarwal-wandb}"
-YAML_FILE="${YAML_FILE:-scripts/k8s/climate-analytics-edm-job-tuned-v2.yaml}"
+YAML_FILE="${YAML_FILE:-scripts/k8s/aimip.yaml}"
 NAMESPACE="climate-analytics"
 
 echo "=========================================="
