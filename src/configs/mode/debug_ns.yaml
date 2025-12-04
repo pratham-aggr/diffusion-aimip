@@ -9,7 +9,7 @@
 defaults:
 #  - debug.yaml
 #  - override /datamodule: navier_stokes.yaml
-  - override /experiment: navier_stokes_time_conditioned.yaml
+  - override /experiments: navier_stokes_time_conditioned.yaml
   - override /callbacks: none
   - override /logger: none
   - _self_

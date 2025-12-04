@@ -7,7 +7,7 @@
 # `python run.py mode=debug_era5`
 
 defaults:
-  - override /experiment: era5_genie.yaml
+  - override /experiments: era5_genie.yaml
   - override /callbacks: null
   - override /logger: wandb
   - _self_

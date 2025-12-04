@@ -8,7 +8,7 @@
 
 defaults:
 #  - debug.yaml
-  - override /experiment: era5_3d.yaml
+  - override /experiments: era5_3d.yaml
   - override /callbacks: null
   - override /logger: null
   - _self_

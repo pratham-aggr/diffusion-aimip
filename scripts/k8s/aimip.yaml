@@ -161,7 +161,7 @@ spec:
               fi
               echo "Running training from directory: $(pwd)"
               python run.py \
-                experiment=era5_sst_seaice_emulation_edm_aimip_tuned_v2 \
+                experiments=era5_sst_seaice_emulation_edm_aimip_tuned_v2 \
                 trainer.accelerator="gpu" \
                 trainer.devices=2 \
                 work_dir=$RESULTS_DIR \
